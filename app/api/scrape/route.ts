@@ -6,8 +6,12 @@ import { FieldValue } from 'firebase-admin/firestore'
 import type { TikTokTrend } from '@/types'
 
 export async function POST(request: NextRequest) {
+  let username: string | undefined
+  
   try {
-    const { username, userId } = await request.json()
+    const body = await request.json()
+    username = body.username
+    const userId = body.userId
 
     if (!username || !userId) {
       return NextResponse.json(
@@ -52,10 +56,83 @@ export async function POST(request: NextRequest) {
         ...trendData,
       },
     })
-  } catch (error) {
-    console.error('Scrape API error:', error)
+  } catch (error: any) {
+    const requestedUsername = username || 'unknown'
+    const errorMessage = error?.message || 'Failed to scrape TikTok account'
+    
+    console.error('Scrape API error:', {
+      username: requestedUsername,
+      error: errorMessage,
+      stack: process.env.DEBUG_SCRAPER === 'true' ? error?.stack : undefined,
+    })
+    
+    // Provide more specific error messages with actionable advice
+    if (errorMessage.includes('Profile not found') || errorMessage.includes('does not exist')) {
+      return NextResponse.json(
+        { 
+          error: `TikTok account "@${requestedUsername}" not found or is private`,
+          suggestion: 'Verify the username is correct and the account exists'
+        },
+        { status: 404 }
+      )
+    }
+    
+    if (errorMessage.includes('private')) {
+      return NextResponse.json(
+        { 
+          error: `TikTok account "@${requestedUsername}" is private`,
+          suggestion: 'Private accounts cannot be scraped'
+        },
+        { status: 403 }
+      )
+    }
+    
+    if (errorMessage.includes('Proxy') || errorMessage.includes('proxy')) {
+      return NextResponse.json(
+        { 
+          error: errorMessage,
+          suggestion: 'Try removing the proxy or using a different one. Set DEBUG_SCRAPER=true in .env.local for detailed logs.'
+        },
+        { status: 502 }
+      )
+    }
+    
+    if (errorMessage.includes('Network error') || errorMessage.includes('Unable to reach')) {
+      return NextResponse.json(
+        { 
+          error: errorMessage,
+          suggestion: 'Check your internet connection, try using a proxy, or enable DEBUG_SCRAPER=true for detailed debugging'
+        },
+        { status: 503 }
+      )
+    }
+    
+    if (errorMessage.includes('timeout') || errorMessage.includes('Timeout')) {
+      return NextResponse.json(
+        { 
+          error: 'Request timed out. TikTok may be blocking the request.',
+          suggestion: 'Try using a proxy, wait a few minutes, or enable DEBUG_SCRAPER=true for detailed logs'
+        },
+        { status: 504 }
+      )
+    }
+    
+    if (errorMessage.includes('CAPTCHA') || errorMessage.includes('blocking')) {
+      return NextResponse.json(
+        { 
+          error: 'TikTok is blocking automated access',
+          suggestion: 'Try using a residential proxy, wait before retrying, or enable DEBUG_SCRAPER=true to see what\'s happening'
+        },
+        { status: 429 }
+      )
+    }
+    
     return NextResponse.json(
-      { error: 'Failed to scrape TikTok account' },
+      { 
+        error: errorMessage,
+        suggestion: 'Enable DEBUG_SCRAPER=true in .env.local and check server logs for detailed error information',
+        details: process.env.NODE_ENV === 'development' || process.env.DEBUG_SCRAPER === 'true' ? error?.stack : undefined
+      },
       { status: 500 }
     )
   }
