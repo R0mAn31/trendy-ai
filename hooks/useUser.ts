@@ -38,8 +38,8 @@ export function useUser() {
           setUser({
             id: firebaseUser.uid,
             email: firebaseUser.email || '',
-            displayName: firebaseUser.displayName,
-            photoURL: firebaseUser.photoURL,
+            displayName: firebaseUser.displayName || undefined,
+            photoURL: firebaseUser.photoURL || undefined,
             createdAt: new Date(),
             updatedAt: new Date(),
           })

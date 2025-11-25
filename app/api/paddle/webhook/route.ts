@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/firebase/admin'
+import { getAdminDb } from '@/lib/firebase/admin'
 import { getSubscriptionDocPath } from '@/lib/firebase/collections'
-import { doc, setDoc, serverTimestamp } from 'firebase-admin/firestore'
+import { FieldValue } from 'firebase-admin/firestore'
 import { verifyWebhookSignature } from '@/lib/paddle/client'
 import type { PaddleWebhookEvent } from '@/types'
 
@@ -29,9 +29,9 @@ export async function POST(request: NextRequest) {
       }
 
       // Update subscription in Firestore
-      const subscriptionRef = doc(adminDb, getSubscriptionDocPath(userId))
-      await setDoc(
-        subscriptionRef,
+      const adminDb = getAdminDb()
+      const subscriptionRef = adminDb.doc(getSubscriptionDocPath(userId))
+      await subscriptionRef.set(
         {
           userId,
           status: subscriptionData.status === 'active' ? 'active' : 'cancelled',
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
             ? new Date(subscriptionData.current_billing_period.end)
             : null,
           cancelAtPeriodEnd: !!subscriptionData.cancel_at,
-          updatedAt: serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
       )
@@ -53,12 +53,12 @@ export async function POST(request: NextRequest) {
       const userId = subscriptionData.custom_data?.user_id || subscriptionData.customer_id
 
       if (userId) {
-        const subscriptionRef = doc(adminDb, getSubscriptionDocPath(userId))
-        await setDoc(
-          subscriptionRef,
+        const adminDb = getAdminDb()
+        const subscriptionRef = adminDb.doc(getSubscriptionDocPath(userId))
+        await subscriptionRef.set(
           {
             status: 'cancelled',
-            updatedAt: serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
           },
           { merge: true }
         )

@@ -1,5 +1,7 @@
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { useEffect, useState } from 'react'
 import { useUser } from '@/hooks/useUser'
 import { useSubscription } from '@/hooks/useSubscription'
@@ -29,14 +31,6 @@ export default function DashboardPage() {
   const [selectedAnalysis, setSelectedAnalysis] = useState<AIAnalysis | null>(null)
   const [showAnalysisModal, setShowAnalysisModal] = useState(false)
 
-  useEffect(() => {
-    if (user && isActive) {
-      loadTrends()
-    } else {
-      setLoading(false)
-    }
-  }, [user, isActive])
-
   const loadTrends = async () => {
     if (!user) return
 
@@ -57,6 +51,15 @@ export default function DashboardPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (user && isActive) {
+      loadTrends()
+    } else {
+      setLoading(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, isActive])
 
   const handleScrape = async () => {
     if (!user || !username.trim()) return

@@ -4,9 +4,27 @@ const nextConfig = {
   images: {
     domains: ['p16-sign-va.tiktokcdn.com', 'p77-sign-va.tiktokcdn.com'],
   },
-  // Puppeteer requires server-side execution
+  // Puppeteer requires server-side execution only
   experimental: {
-    serverComponentsExternalPackages: ['puppeteer-core'],
+    serverComponentsExternalPackages: [
+      'puppeteer',
+      'puppeteer-core',
+      'puppeteer-extra',
+      'puppeteer-extra-plugin-stealth',
+    ],
+  },
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      // Exclude puppeteer from client-side bundle
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+        child_process: false,
+      }
+    }
+    return config
   },
 }
 

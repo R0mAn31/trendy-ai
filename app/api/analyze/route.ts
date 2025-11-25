@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { analyzeTikTokTrend, generateVideoIdeas } from '@/lib/gemini/client'
-import { adminDb } from '@/lib/firebase/admin'
+import { getAdminDb } from '@/lib/firebase/admin'
 import {
   getSavedTrendDocPath,
   getAnalysisDocPath,
   getAnalysisCollectionPath,
 } from '@/lib/firebase/collections'
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase-admin/firestore'
+import { FieldValue } from 'firebase-admin/firestore'
 import type { AIAnalysis } from '@/types'
 
 export async function POST(request: NextRequest) {
@@ -21,10 +21,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Get trend data
-    const trendRef = doc(adminDb, getSavedTrendDocPath(userId, trendId))
-    const trendDoc = await getDoc(trendRef)
+    const adminDb = getAdminDb()
+    const trendRef = adminDb.doc(getSavedTrendDocPath(userId, trendId))
+    const trendDoc = await trendRef.get()
 
-    if (!trendDoc.exists()) {
+    if (!trendDoc.exists) {
       return NextResponse.json({ error: 'Trend not found' }, { status: 404 })
     }
 
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest) {
 
       // Save analysis to Firestore
       const analysisId = `${trendId}_${Date.now()}`
+      const analysisRef = adminDb.doc(getAnalysisDocPath(userId, analysisId))
 
       const analysisData: Omit<AIAnalysis, 'id'> = {
         userId,
@@ -48,9 +50,9 @@ export async function POST(request: NextRequest) {
         generatedAt: new Date(),
       }
 
-      await setDoc(doc(adminDb, getAnalysisDocPath(userId, analysisId)), {
+      await analysisRef.set({
         ...analysisData,
-        generatedAt: serverTimestamp(),
+        generatedAt: FieldValue.serverTimestamp(),
       })
 
       return NextResponse.json({

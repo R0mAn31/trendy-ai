@@ -6,6 +6,7 @@ import { signOut } from 'firebase/auth'
 import { Button } from '@/components/ui/Button'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 
 export function Topbar() {
   const [user, loading] = useAuthState(auth)
@@ -49,7 +50,13 @@ export function Topbar() {
               <label tabIndex={0} className="btn btn-ghost btn-circle avatar">
                 <div className="w-10 rounded-full">
                   {user.photoURL ? (
-                    <img src={user.photoURL} alt={user.displayName || 'User'} />
+                    <Image
+                      src={user.photoURL}
+                      alt={user.displayName || 'User'}
+                      width={40}
+                      height={40}
+                      className="rounded-full"
+                    />
                   ) : (
                     <div className="bg-primary text-primary-content flex items-center justify-center w-full h-full">
                       {user.email?.charAt(0).toUpperCase()}

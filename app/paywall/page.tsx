@@ -1,5 +1,7 @@
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { useEffect, useState } from 'react'
 import { useUser } from '@/hooks/useUser'
 import { Topbar } from '@/components/layout/Topbar'

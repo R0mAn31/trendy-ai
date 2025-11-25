@@ -86,6 +86,10 @@ export interface PaddleWebhookEvent {
       end: string
     }
     cancel_at?: string
+    custom_data?: {
+      user_id?: string
+      [key: string]: any
+    }
   }
 }
 

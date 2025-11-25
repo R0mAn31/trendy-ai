@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { scrapeTikTokAccount } from '@/lib/scraper/tiktok'
-import { adminDb } from '@/lib/firebase/admin'
-import { getSavedTrendDocPath, getSavedTrendsCollectionPath } from '@/lib/firebase/collections'
-import { doc, setDoc, serverTimestamp } from 'firebase-admin/firestore'
+import { getAdminDb } from '@/lib/firebase/admin'
+import { getSavedTrendsCollectionPath } from '@/lib/firebase/collections'
+import { FieldValue } from 'firebase-admin/firestore'
 import type { TikTokTrend } from '@/types'
 
 export async function POST(request: NextRequest) {
@@ -20,11 +20,10 @@ export async function POST(request: NextRequest) {
     const scrapedData = await scrapeTikTokAccount(username)
 
     // Save to Firestore
-    const trendRef = doc(
-      adminDb,
-      getSavedTrendsCollectionPath(userId),
-      `${username}_${Date.now()}`
-    )
+    const adminDb = getAdminDb()
+    const trendRef = adminDb
+      .collection(getSavedTrendsCollectionPath(userId))
+      .doc(`${username}_${Date.now()}`)
 
     const trendData: Omit<TikTokTrend, 'id'> = {
       userId,
@@ -40,10 +39,10 @@ export async function POST(request: NextRequest) {
       createdAt: new Date(),
     }
 
-    await setDoc(trendRef, {
+    await trendRef.set({
       ...trendData,
-      createdAt: serverTimestamp(),
-      lastScrapedAt: serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      lastScrapedAt: FieldValue.serverTimestamp(),
     })
 
     return NextResponse.json({
