@@ -8,23 +8,23 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 
 export function Input({ label, error, className, ...props }: InputProps) {
   return (
-    <div className="form-control w-full">
+    <div className="w-full">
       {label && (
-        <label className="label">
-          <span className="label-text">{label}</span>
+        <label className="block text-sm font-semibold text-neutral-700 mb-2">
+          {label}
         </label>
       )}
       <input
         className={cn(
-          'input input-bordered w-full',
-          error && 'input-error',
+          'input-custom',
+          error && 'border-red-500 focus:border-red-500 focus:ring-red-200',
           className
         )}
         {...props}
       />
       {error && (
-        <label className="label">
-          <span className="label-text-alt text-error">{error}</span>
+        <label className="block mt-1 text-sm text-red-600">
+          {error}
         </label>
       )}
     </div>

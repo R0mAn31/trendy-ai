@@ -1,3 +1,5 @@
+<!-- @format -->
+
 # Setup Guide - Trendy AI
 
 ## Prerequisites
@@ -87,18 +89,18 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
-    
+
     // Subscriptions
     match /subscriptions/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow write: if false; // Only server can write
     }
-    
+
     // Saved trends
     match /saved_trends/{userId}/items/{itemId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
-    
+
     // Analysis
     match /analysis/{userId}/items/{itemId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
@@ -108,6 +110,7 @@ service cloud.firestore {
 ```
 
 Deploy rules:
+
 ```bash
 firebase deploy --only firestore:rules
 ```
@@ -132,6 +135,7 @@ Visit http://localhost:3000
 ### Puppeteer in Production
 
 For production, you'll need to:
+
 - Use `puppeteer-core` instead of `puppeteer`
 - Install Chrome separately (e.g., via Docker or Vercel's Chrome extension)
 - Or use a headless browser service like Browserless.io
@@ -139,6 +143,7 @@ For production, you'll need to:
 ### Proxy Setup
 
 For TikTok scraping, you'll need reliable proxies:
+
 - Consider services like Bright Data, Oxylabs, or Smartproxy
 - Add proxies to `PROXY_LIST` environment variable
 - Rotate proxies to avoid rate limits
@@ -146,6 +151,7 @@ For TikTok scraping, you'll need reliable proxies:
 ### Rate Limiting
 
 Add rate limiting to API routes:
+
 - Use libraries like `@upstash/ratelimit`
 - Limit scraping requests per user
 - Cache results when possible
@@ -168,4 +174,3 @@ Add rate limiting to API routes:
 - [ ] Add unit and integration tests
 - [ ] Set up CI/CD pipeline
 - [ ] Add monitoring and alerts
-

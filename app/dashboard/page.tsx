@@ -169,21 +169,25 @@ export default function DashboardPage() {
       <input id="drawer" type="checkbox" className="drawer-toggle" />
       <div className="drawer-content flex flex-col">
         <Topbar />
-        <main className="flex-1 p-6 bg-base-200">
+        <main className="flex-1 p-6 bg-neutral-50 min-h-screen">
           <div className="container mx-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h1 className="text-3xl font-bold">Dashboard</h1>
-              <Button onClick={() => setShowAddModal(true)}>Add TikTok Account</Button>
+            <div className="flex justify-between items-center mb-8">
+              <h1 className="text-4xl font-bold text-gradient-primary">Dashboard</h1>
+              <Button onClick={() => setShowAddModal(true)} variant="primary">
+                Add TikTok Account
+              </Button>
             </div>
 
             {loading ? (
               <div className="flex justify-center py-12">
-                <span className="loading loading-spinner loading-lg" />
+                <span className="loading loading-spinner loading-lg text-primary-600" />
               </div>
             ) : trends.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-xl mb-4">No TikTok accounts added yet.</p>
-                <Button onClick={() => setShowAddModal(true)}>Add Your First Account</Button>
+              <div className="text-center py-12 animate-fade-in">
+                <p className="text-xl mb-4 text-neutral-600">No TikTok accounts added yet.</p>
+                <Button onClick={() => setShowAddModal(true)} variant="primary">
+                  Add Your First Account
+                </Button>
               </div>
             ) : (
               <div className="grid gap-6">

@@ -18,14 +18,14 @@ export function Topbar() {
   }
 
   return (
-    <div className="navbar bg-base-100 shadow-lg">
+    <div className="navbar bg-white shadow-md border-b border-neutral-200">
       <div className="flex-none lg:hidden">
-        <label htmlFor="drawer" className="btn btn-square btn-ghost">
+        <label htmlFor="drawer" className="btn btn-square btn-ghost hover:bg-neutral-100">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             fill="none"
             viewBox="0 0 24 24"
-            className="inline-block w-5 h-5 stroke-current"
+            className="inline-block w-5 h-5 stroke-neutral-700"
           >
             <path
               strokeLinecap="round"
@@ -37,18 +37,18 @@ export function Topbar() {
         </label>
       </div>
       <div className="flex-1">
-        <Link href="/" className="btn btn-ghost text-xl">
+        <Link href="/" className="text-xl font-bold text-gradient-primary hover:opacity-80 transition-opacity">
           Trendy AI
         </Link>
       </div>
       <div className="flex-none gap-2">
         {loading ? (
-          <span className="loading loading-spinner loading-sm" />
+          <span className="loading loading-spinner loading-sm text-primary-600" />
         ) : user ? (
           <>
             <div className="dropdown dropdown-end">
-              <label tabIndex={0} className="btn btn-ghost btn-circle avatar">
-                <div className="w-10 rounded-full">
+              <label tabIndex={0} className="btn btn-ghost btn-circle avatar hover:bg-neutral-100">
+                <div className="w-10 rounded-full ring-2 ring-primary-200 hover:ring-primary-400 transition-all">
                   {user.photoURL ? (
                     <Image
                       src={user.photoURL}
@@ -58,7 +58,7 @@ export function Topbar() {
                       className="rounded-full"
                     />
                   ) : (
-                    <div className="bg-primary text-primary-content flex items-center justify-center w-full h-full">
+                    <div className="bg-gradient-primary text-white flex items-center justify-center w-full h-full font-bold">
                       {user.email?.charAt(0).toUpperCase()}
                     </div>
                   )}
@@ -66,19 +66,25 @@ export function Topbar() {
               </label>
               <ul
                 tabIndex={0}
-                className="mt-3 z-[1] p-2 shadow menu menu-sm dropdown-content bg-base-100 rounded-box w-52"
+                className="mt-3 z-[1] p-2 shadow-lg menu menu-sm dropdown-content bg-white rounded-xl w-52 border border-neutral-200"
               >
                 <li>
-                  <Link href="/profile">Profile</Link>
+                  <Link href="/profile" className="text-neutral-700 hover:bg-neutral-100 hover:text-primary-600">
+                    Profile
+                  </Link>
                 </li>
                 <li>
-                  <button onClick={handleSignOut}>Logout</button>
+                  <button onClick={handleSignOut} className="text-red-600 hover:bg-red-50">
+                    Logout
+                  </button>
                 </li>
               </ul>
             </div>
           </>
         ) : (
-          <Button onClick={() => router.push('/auth/login')}>Sign In</Button>
+          <Button onClick={() => router.push('/auth/login')} variant="primary">
+            Sign In
+          </Button>
         )}
       </div>
     </div>

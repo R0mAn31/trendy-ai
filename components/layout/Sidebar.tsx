@@ -16,9 +16,9 @@ export function Sidebar() {
   return (
     <div className="drawer-side">
       <label htmlFor="drawer" className="drawer-overlay" />
-      <aside className="w-64 min-h-full bg-base-200">
-        <div className="p-4">
-          <Link href="/" className="text-2xl font-bold">
+      <aside className="w-64 min-h-full bg-white border-r border-neutral-200">
+        <div className="p-6 border-b border-neutral-200">
+          <Link href="/" className="text-2xl font-bold text-gradient-primary">
             Trendy AI
           </Link>
         </div>
@@ -28,12 +28,14 @@ export function Sidebar() {
               <Link
                 href={item.href}
                 className={cn(
-                  'flex items-center gap-3',
-                  pathname === item.href && 'active'
+                  'flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200',
+                  pathname === item.href
+                    ? 'bg-gradient-primary text-white shadow-md shadow-primary-500/30'
+                    : 'text-neutral-700 hover:bg-neutral-100 hover:text-primary-600'
                 )}
               >
-                <span>{item.icon}</span>
-                {item.name}
+                <span className="text-xl">{item.icon}</span>
+                <span className="font-semibold">{item.name}</span>
               </Link>
             </li>
           ))}

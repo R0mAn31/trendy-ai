@@ -20,48 +20,48 @@ export function TrendCard({
   generating,
 }: TrendCardProps) {
   return (
-    <div className="card bg-base-100 shadow-xl">
-      <div className="card-body">
-        <h2 className="card-title">
-          @{trend.accountUsername}
+    <div className="card-custom p-6 animate-fade-in-up hover-lift">
+      <div>
+        <h2 className="text-2xl font-bold mb-2 text-neutral-900">
+          <span className="text-primary-600">@</span>{trend.accountUsername}
           {trend.accountDisplayName && (
-            <span className="text-base font-normal text-base-content/70">
+            <span className="text-base font-normal text-neutral-600 ml-2">
               {trend.accountDisplayName}
             </span>
           )}
         </h2>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 my-4">
-          <div className="stat py-2">
-            <div className="stat-title">Followers</div>
-            <div className="stat-value text-lg">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 my-6">
+          <div className="bg-gradient-primary/10 rounded-lg p-4 border border-primary-200">
+            <div className="text-sm font-semibold text-neutral-600 mb-1">Followers</div>
+            <div className="text-2xl font-bold text-primary-600">
               {trend.followers.toLocaleString()}
             </div>
           </div>
-          <div className="stat py-2">
-            <div className="stat-title">Likes</div>
-            <div className="stat-value text-lg">
+          <div className="bg-gradient-secondary/10 rounded-lg p-4 border border-secondary-200">
+            <div className="text-sm font-semibold text-neutral-600 mb-1">Likes</div>
+            <div className="text-2xl font-bold text-secondary-600">
               {trend.likes.toLocaleString()}
             </div>
           </div>
-          <div className="stat py-2">
-            <div className="stat-title">Views</div>
-            <div className="stat-value text-lg">
+          <div className="bg-gradient-accent/10 rounded-lg p-4 border border-accent-200">
+            <div className="text-sm font-semibold text-neutral-600 mb-1">Views</div>
+            <div className="text-2xl font-bold text-accent-600">
               {trend.views.toLocaleString()}
             </div>
           </div>
-          <div className="stat py-2">
-            <div className="stat-title">Videos</div>
-            <div className="stat-value text-lg">{trend.videoCount}</div>
+          <div className="bg-neutral-100 rounded-lg p-4 border border-neutral-200">
+            <div className="text-sm font-semibold text-neutral-600 mb-1">Videos</div>
+            <div className="text-2xl font-bold text-neutral-700">{trend.videoCount}</div>
           </div>
         </div>
 
         {trend.hashtags.length > 0 && (
-          <div className="my-2">
-            <div className="text-sm font-semibold mb-1">Popular Hashtags:</div>
+          <div className="my-4">
+            <div className="text-sm font-semibold mb-2 text-neutral-700">Popular Hashtags:</div>
             <div className="flex flex-wrap gap-2">
               {trend.hashtags.slice(0, 5).map((tag, idx) => (
-                <span key={idx} className="badge badge-primary badge-sm">
+                <span key={idx} className="badge-custom">
                   {tag}
                 </span>
               ))}
@@ -69,12 +69,12 @@ export function TrendCard({
           </div>
         )}
 
-        <div className="text-xs text-base-content/60 mt-2">
+        <div className="text-xs text-neutral-500 mt-4 mb-4">
           Last scraped:{' '}
           {formatDistanceToNow(trend.lastScrapedAt, { addSuffix: true })}
         </div>
 
-        <div className="card-actions justify-end mt-4">
+        <div className="flex justify-end gap-3 mt-6">
           <Button
             variant="outline"
             onClick={() => onAnalyze(trend.id)}
