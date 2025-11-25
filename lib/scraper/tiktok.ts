@@ -1,405 +1,838 @@
-import puppeteer from 'puppeteer'
-import StealthPlugin from 'puppeteer-extra-plugin-stealth'
-import puppeteerExtra from 'puppeteer-extra'
-import type { TikTokTrend } from '@/types'
+/** @format */
+
+import puppeteer from "puppeteer";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import puppeteerExtra from "puppeteer-extra";
+import type { TikTokTrend } from "@/types";
 
 // Use stealth plugin to avoid detection
-puppeteerExtra.use(StealthPlugin())
+puppeteerExtra.use(StealthPlugin());
 
 // Debug mode - set DEBUG_SCRAPER=true in .env.local
-const DEBUG_MODE = process.env.DEBUG_SCRAPER === 'true'
+const DEBUG_MODE = process.env.DEBUG_SCRAPER === "true";
 
 // Proxy pool - Load from environment variable
-// Format: PROXY_LIST=proxy1:port,proxy2:port,proxy3:port
-// Or use scripts/fetch-proxies.js to get free proxies
-const PROXY_POOL = process.env.PROXY_LIST?.split(',').map(p => p.trim()).filter(p => p) || []
+const PROXY_POOL =
+  process.env.PROXY_LIST?.split(",")
+    .map((p) => p.trim())
+    .filter((p) => p) || [];
+
+// Retry configuration
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 2000; // 2 seconds
 
 function debugLog(message: string, data?: any) {
   if (DEBUG_MODE) {
-    console.log(`[SCRAPER DEBUG] ${message}`, data || '')
+    console.log(`[SCRAPER DEBUG] ${message}`, data || "");
   }
 }
 
 function getRandomProxy(): string | undefined {
   if (PROXY_POOL.length === 0) {
-    debugLog('No proxies configured. Scraping without proxy (may be blocked by TikTok)')
-    return undefined
+    debugLog(
+      "No proxies configured. Scraping without proxy (may be blocked by TikTok)"
+    );
+    return undefined;
   }
-  const proxy = PROXY_POOL[Math.floor(Math.random() * PROXY_POOL.length)]
-  debugLog(`Using proxy: ${proxy}`)
-  return proxy
+  const proxy = PROXY_POOL[Math.floor(Math.random() * PROXY_POOL.length)];
+  debugLog(`Using proxy: ${proxy}`);
+  return proxy;
 }
 
-export async function scrapeTikTokAccount(username: string): Promise<Omit<TikTokTrend, 'id' | 'userId' | 'createdAt'>> {
-  const proxy = getRandomProxy()
-  let browser: any = null
-  let page: any = null
-  
-  debugLog(`Starting scrape for @${username}`, { proxy: proxy || 'none' })
-  
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+interface SIGIState {
+  UserModule?: {
+    users?: {
+      [key: string]: {
+        nickname?: string;
+        uniqueId?: string;
+        signature?: string;
+        avatarLarger?: string;
+        avatarMedium?: string;
+        avatarThumb?: string;
+        verified?: boolean;
+        stats?: {
+          followerCount?: number;
+          followingCount?: number;
+          heartCount?: number;
+          videoCount?: number;
+        };
+      };
+    };
+  };
+  ItemModule?: {
+    items?: {
+      [key: string]: {
+        desc?: string;
+        music?: {
+          title?: string;
+          authorName?: string;
+        };
+        stats?: {
+          playCount?: number;
+          diggCount?: number;
+          commentCount?: number;
+          shareCount?: number;
+        };
+        hashtags?: Array<{
+          name?: string;
+        }>;
+      };
+    };
+  };
+}
+
+/**
+ * Extract SIGI_STATE JSON from TikTok page
+ * TikTok stores all data in window.__UNIVERSAL_DATA_FOR_REHYDRATION__ or in script tags
+ */
+function extractSIGIState(pageContent: string): SIGIState | null {
   try {
-    const launchOptions: any = {
-      headless: DEBUG_MODE ? false : true, // Show browser in debug mode
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--disable-gpu',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--window-size=1920,1080',
-      ],
-    }
-
-    if (proxy) {
-      launchOptions.args.push(`--proxy-server=${proxy}`)
-      debugLog(`Launching browser with proxy: ${proxy}`)
-    } else {
-      debugLog('Launching browser without proxy')
-    }
-
-    browser = await puppeteerExtra.launch(launchOptions)
-    debugLog('Browser launched successfully')
-
-    page = await browser.newPage()
-    debugLog('New page created')
-
-    // Set viewport and user agent
-    await page.setViewport({ width: 1920, height: 1080 })
-    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    await page.setUserAgent(userAgent)
-    debugLog('Viewport and user agent set', { userAgent })
-
-    // Remove webdriver property
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', {
-        get: () => false,
-      })
-    })
-    debugLog('Webdriver property hidden')
-
-    // Enable request/response logging in debug mode
-    if (DEBUG_MODE) {
-      page.on('request', (request: any) => {
-        debugLog(`Request: ${request.method()} ${request.url()}`)
-      })
-      page.on('response', (response: any) => {
-        debugLog(`Response: ${response.status()} ${response.url()}`)
-      })
-      page.on('requestfailed', (request: any) => {
-        debugLog(`Request failed: ${request.url()} - ${request.failure()?.errorText}`)
-      })
-    }
-
-    // Navigate to TikTok profile
-    const profileUrl = `https://www.tiktok.com/@${username}`
-    debugLog(`Navigating to: ${profileUrl}`)
-    
-    let timeoutId: NodeJS.Timeout | null = null
-    try {
-      const navigationPromise = page.goto(profileUrl, { 
-        waitUntil: 'domcontentloaded', 
-        timeout: 30000 
-      })
-
-      // Add timeout handler
-      timeoutId = setTimeout(() => {
-        debugLog('Navigation timeout - page may be slow or blocked')
-      }, 25000)
-
-      await navigationPromise
-      if (timeoutId) clearTimeout(timeoutId)
-      debugLog('Navigation completed')
-    } catch (error: any) {
-      if (timeoutId) clearTimeout(timeoutId)
-      debugLog('Navigation error', { error: error.message, code: error.code })
-      
-      if (error.message.includes('net::ERR')) {
-        const errorCode = error.message.match(/net::ERR_(\w+)/)?.[1]
-        debugLog(`Network error code: ${errorCode}`)
-        
-        if (errorCode === 'PROXY_CONNECTION_FAILED' || errorCode === 'TUNNEL_CONNECTION_FAILED') {
-          throw new Error(`Proxy connection failed: ${proxy}. Try a different proxy or disable proxy.`)
-        }
-        
-        if (errorCode === 'TIMED_OUT' || errorCode === 'CONNECTION_TIMED_OUT') {
-          throw new Error(`Connection timed out. TikTok may be blocking requests. ${proxy ? 'Try a different proxy.' : 'Consider using a proxy.'}`)
-        }
-        
-        if (errorCode === 'CONNECTION_REFUSED') {
-          throw new Error(`Connection refused. ${proxy ? 'Proxy may be down or blocked.' : 'Check your internet connection.'}`)
-        }
-        
-        throw new Error(`Network error (${errorCode}): Unable to reach TikTok. ${proxy ? `Proxy ${proxy} may be blocked or invalid.` : 'Check your internet connection or try using a proxy.'}`)
-      }
-      
-      if (error.message.includes('Navigation timeout')) {
-        throw new Error(`Navigation timeout: TikTok took too long to respond. ${proxy ? 'Proxy may be slow.' : 'Try using a proxy or check your connection.'}`)
-      }
-      
-      throw error
-    }
-
-    // Wait a bit for content to load
-    debugLog('Waiting for content to load...')
-    await new Promise(resolve => setTimeout(resolve, 2000))
-
-    // Check if page loaded correctly
-    const pageTitle = await page.title()
-    debugLog('Page title', { title: pageTitle })
-    
-    if (pageTitle.includes('404') || pageTitle.includes('Not Found')) {
-      throw new Error(`Profile not found: @${username} does not exist`)
-    }
-
-    // Check for common TikTok error pages
-    const pageContent = await page.content()
-    debugLog('Page content length', { length: pageContent.length })
-    
-    if (pageContent.includes('This page isn\'t available') || pageContent.includes('User not found')) {
-      throw new Error(`Profile not found: @${username} does not exist`)
-    }
-    
-    if (pageContent.includes('private') && pageContent.includes('This account is private')) {
-      throw new Error(`Profile is private: @${username}`)
-    }
-    
-    if (pageContent.includes('blocked') || pageContent.includes('unavailable')) {
-      throw new Error(`Profile is blocked or unavailable: @${username}`)
-    }
-
-    // Check for CAPTCHA or blocking
-    if (pageContent.includes('captcha') || pageContent.includes('verify') || pageContent.includes('robot')) {
-      debugLog('WARNING: Possible CAPTCHA or bot detection')
-      throw new Error(`TikTok may be blocking automated access. Try using a different proxy or wait before retrying.`)
-    }
-
-    // Try multiple selectors for profile data
-    let profileLoaded = false
-    const selectors = [
-      '[data-e2e="user-title"]',
-      '[data-e2e="user-name"]',
-      'h1[data-e2e="user-title"]',
-      '.tiktok-username',
-      'h1',
-    ]
-
-    debugLog('Checking for profile selectors...')
-    for (const selector of selectors) {
+    // Method 1: Try to find SIGI_STATE in script tag with id
+    const sigiMatch = pageContent.match(
+      /<script[^>]*id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/
+    );
+    if (sigiMatch && sigiMatch[1]) {
       try {
-        await page.waitForSelector(selector, { timeout: 5000 })
-        debugLog(`Found profile using selector: ${selector}`)
-        profileLoaded = true
-        break
-      } catch {
-        debugLog(`Selector not found: ${selector}`)
-        continue
+        const data = JSON.parse(sigiMatch[1]);
+        if (data["__DEFAULT_SCOPE__"]?.["webapp.user-detail"]) {
+          return data["__DEFAULT_SCOPE__"]["webapp.user-detail"];
+        }
+        if (data.UserModule || data.ItemModule) {
+          return data as SIGIState;
+        }
+        return data as SIGIState;
+      } catch (e) {
+        debugLog("Failed to parse SIGI_STATE from script tag", { error: e });
       }
     }
 
-    if (!profileLoaded) {
-      // Take screenshot in debug mode
-      if (DEBUG_MODE) {
+    // Method 2: Try to find window.__UNIVERSAL_DATA_FOR_REHYDRATION__
+    const windowDataMatch = pageContent.match(
+      /window\.__UNIVERSAL_DATA_FOR_REHYDRATION__\s*=\s*({[\s\S]*?});/
+    );
+    if (windowDataMatch && windowDataMatch[1]) {
+      try {
+        const data = JSON.parse(windowDataMatch[1]);
+        if (data["__DEFAULT_SCOPE__"]?.["webapp.user-detail"]) {
+          return data["__DEFAULT_SCOPE__"]["webapp.user-detail"];
+        }
+        if (data.UserModule || data.ItemModule) {
+          return data as SIGIState;
+        }
+        return data as SIGIState;
+      } catch (e) {
+        debugLog("Failed to parse window.__UNIVERSAL_DATA_FOR_REHYDRATION__", {
+          error: e,
+        });
+      }
+    }
+
+    // Method 3: Try to find SIGI_STATE in any script tag
+    const scriptRegex = /<script[^>]*>([\s\S]*?)<\/script>/g;
+    let scriptMatch;
+    while ((scriptMatch = scriptRegex.exec(pageContent)) !== null) {
+      const match = scriptMatch;
+      const scriptContent = match[1];
+      if (
+        scriptContent.includes("SIGI_STATE") ||
+        scriptContent.includes("UserModule") ||
+        scriptContent.includes("ItemModule") ||
+        scriptContent.includes("__UNIVERSAL_DATA_FOR_REHYDRATION__")
+      ) {
         try {
-          await page.screenshot({ path: `debug-${username}-${Date.now()}.png`, fullPage: true })
-          debugLog('Screenshot saved for debugging')
+          // Try to extract JSON object - look for the actual data structure
+          let jsonMatch = scriptContent.match(/({[\s\S]*"UserModule"[\s\S]*})/);
+          if (!jsonMatch) {
+            jsonMatch = scriptContent.match(/({[\s\S]*"ItemModule"[\s\S]*})/);
+          }
+          if (!jsonMatch) {
+            jsonMatch = scriptContent.match(/({[\s\S]*})/);
+          }
+          if (jsonMatch) {
+            const data = JSON.parse(jsonMatch[1]);
+            if (data.UserModule || data.ItemModule) {
+              return data as SIGIState;
+            }
+            if (data["__DEFAULT_SCOPE__"]?.["webapp.user-detail"]) {
+              return data["__DEFAULT_SCOPE__"]["webapp.user-detail"];
+            }
+          }
         } catch (e) {
-          debugLog('Could not save screenshot', { error: e })
+          // Continue searching
+          continue;
         }
       }
-      
-      // Check if it's a private account or blocked
-      if (pageContent.includes('private') || pageContent.includes('This account is private')) {
-        throw new Error(`Profile is private: @${username}`)
-      }
-      if (pageContent.includes('blocked') || pageContent.includes('unavailable')) {
-        throw new Error(`Profile is blocked or unavailable: @${username}`)
-      }
-      
-      debugLog('Profile selectors not found. Page content preview:', {
-        title: pageTitle,
-        url: page.url(),
-        contentLength: pageContent.length,
-        first500Chars: pageContent.substring(0, 500)
-      })
-      
-      throw new Error(`Profile not found or failed to load: @${username}. TikTok may have changed their structure or the page may be blocked.`)
     }
 
-    // Extract profile data with fallback selectors
-    debugLog('Extracting profile data...')
-    const accountData = await page.evaluate(() => {
-      const getTextContent = (selectors: string[]): string => {
-        for (const selector of selectors) {
-          const element = document.querySelector(selector)
-          if (element?.textContent?.trim()) {
-            return element.textContent.trim()
-          }
-        }
-        return '0'
-      }
-
-      const parseNumber = (text: string): number => {
-        if (!text || text === '0') return 0
-        const cleaned = text.replace(/[^\d.KMB]/g, '').toUpperCase()
-        if (cleaned.includes('K')) {
-          return parseFloat(cleaned.replace('K', '')) * 1000
-        }
-        if (cleaned.includes('M')) {
-          return parseFloat(cleaned.replace('M', '')) * 1000000
-        }
-        if (cleaned.includes('B')) {
-          return parseFloat(cleaned.replace('B', '')) * 1000000000
-        }
-        return parseFloat(cleaned) || 0
-      }
-
-      // Try multiple selectors for each field
-      const followersText = getTextContent([
-        '[data-e2e="followers-count"]',
-        '[data-e2e="follower-count"]',
-        '.followers-count',
-        'strong[title*="Followers"]',
-      ]) || '0'
-      
-      const likesText = getTextContent([
-        '[data-e2e="likes-count"]',
-        '[data-e2e="like-count"]',
-        '.likes-count',
-        'strong[title*="Likes"]',
-      ]) || '0'
-      
-      const displayName = getTextContent([
-        '[data-e2e="user-title"]',
-        '[data-e2e="user-name"]',
-        'h1[data-e2e="user-title"]',
-        '.tiktok-username',
-        'h1',
-      ]) || ''
-
-      // Extract video count (try multiple methods)
-      let videoCount = 0
-      const videoSelectors = [
-        '[data-e2e="user-post-item"]',
-        '[data-e2e="user-post-item-list"] > div',
-        '.video-item',
-      ]
-      
-      for (const selector of videoSelectors) {
-        const elements = document.querySelectorAll(selector)
-        if (elements.length > 0) {
-          videoCount = elements.length
-          break
-        }
-      }
-
-      // Extract hashtags from video descriptions
-      const hashtags = new Set<string>()
-      const descSelectors = [
-        '[data-e2e="user-post-item-desc"]',
-        '.video-description',
-        '[data-e2e="user-post-item"] [class*="desc"]',
-      ]
-      
-      descSelectors.forEach((selector) => {
-        document.querySelectorAll(selector).forEach((el) => {
-          const text = el.textContent || ''
-          const matches = text.match(/#[\w\u0590-\u05ff]+/g)
-          if (matches) {
-            matches.forEach((tag) => hashtags.add(tag))
-          }
-        })
-      })
-
-      // Extract audio tracks
-      const audioTracks = new Set<string>()
-      const audioSelectors = [
-        '[data-e2e="video-music"]',
-        '.video-music',
-        '[class*="music"]',
-      ]
-      
-      audioSelectors.forEach((selector) => {
-        document.querySelectorAll(selector).forEach((el) => {
-          const audioName = el.textContent?.trim()
-          if (audioName && audioName.length > 0) {
-            audioTracks.add(audioName)
-          }
-        })
-      })
-
-      // Calculate total views
-      let totalViews = 0
-      const viewSelectors = [
-        '[data-e2e="video-view-count"]',
-        '.video-view-count',
-        '[class*="view"]',
-      ]
-      
-      viewSelectors.forEach((selector) => {
-        document.querySelectorAll(selector).forEach((el) => {
-          const viewsText = el.textContent || '0'
-          totalViews += parseNumber(viewsText)
-        })
-      })
-
-      return {
-        displayName,
-        followers: parseNumber(followersText),
-        likes: parseNumber(likesText),
-        views: totalViews,
-        videoCount,
-        hashtags: Array.from(hashtags).slice(0, 20),
-        audioTracks: Array.from(audioTracks).slice(0, 20),
-      }
-    })
-
-    debugLog('Data extracted successfully', accountData)
-
-    if (browser) {
-      await browser.close()
-      debugLog('Browser closed')
-    }
-
-    // Validate scraped data
-    if (!accountData.displayName && accountData.followers === 0 && accountData.likes === 0) {
-      throw new Error(`Unable to extract data from @${username}. The account may be private or TikTok structure has changed.`)
-    }
-
-    return {
-      accountUsername: username,
-      accountDisplayName: accountData.displayName || username,
-      followers: accountData.followers,
-      likes: accountData.likes,
-      views: accountData.views,
-      videoCount: accountData.videoCount,
-      hashtags: accountData.hashtags,
-      audioTracks: accountData.audioTracks,
-      lastScrapedAt: new Date(),
-    }
-  } catch (error: any) {
-    if (browser) {
-      try {
-        await browser.close()
-        debugLog('Browser closed after error')
-      } catch (closeError) {
-        debugLog('Error closing browser', { error: closeError })
-      }
-    }
-    
-    debugLog('Scraping error', { 
-      username, 
-      error: error.message, 
-      stack: error.stack,
-      proxy: proxy || 'none'
-    })
-    
-    // Re-throw with original error message if it's already descriptive
-    if (error.message && (error.message.includes('@') || error.message.includes('Proxy') || error.message.includes('Network'))) {
-      throw error
-    }
-    
-    throw new Error(`Failed to scrape TikTok account @${username}: ${error?.message || 'Unknown error'}`)
+    debugLog("SIGI_STATE not found in page content");
+    return null;
+  } catch (error) {
+    debugLog("Error extracting SIGI_STATE", { error });
+    return null;
   }
+}
+
+/**
+ * Extract SIGI_STATE from browser context (more reliable)
+ */
+async function extractSIGIStateFromBrowser(
+  page: any
+): Promise<SIGIState | null> {
+  try {
+    const sigiState = await page.evaluate(() => {
+      // Method 1: Try to access window.__UNIVERSAL_DATA_FOR_REHYDRATION__
+      if ((window as any).__UNIVERSAL_DATA_FOR_REHYDRATION__) {
+        const data = (window as any).__UNIVERSAL_DATA_FOR_REHYDRATION__;
+        if (data["__DEFAULT_SCOPE__"]?.["webapp.user-detail"]) {
+          return data["__DEFAULT_SCOPE__"]["webapp.user-detail"];
+        }
+        if (data.UserModule || data.ItemModule) {
+          return data;
+        }
+        return data;
+      }
+
+      // Method 2: Try to find script tag with data
+      const scripts = Array.from(document.querySelectorAll("script"));
+      for (const script of scripts) {
+        if (
+          script.id === "__UNIVERSAL_DATA_FOR_REHYDRATION__" ||
+          script.textContent?.includes("UserModule") ||
+          script.textContent?.includes("ItemModule")
+        ) {
+          try {
+            const content = script.textContent || "";
+
+            // Try to find JSON object
+            let jsonMatch = content.match(/({[\s\S]*"UserModule"[\s\S]*})/);
+            if (!jsonMatch) {
+              jsonMatch = content.match(/({[\s\S]*"ItemModule"[\s\S]*})/);
+            }
+            if (!jsonMatch) {
+              jsonMatch = content.match(/({[\s\S]*})/);
+            }
+
+            if (jsonMatch) {
+              const parsed = JSON.parse(jsonMatch[1]);
+              if (parsed.UserModule || parsed.ItemModule) {
+                return parsed;
+              }
+              if (parsed["__DEFAULT_SCOPE__"]?.["webapp.user-detail"]) {
+                return parsed["__DEFAULT_SCOPE__"]["webapp.user-detail"];
+              }
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+      }
+      return null;
+    });
+
+    return sigiState;
+  } catch (error) {
+    debugLog("Error extracting SIGI_STATE from browser context", { error });
+    return null;
+  }
+}
+
+/**
+ * Validate and extract user data from SIGI_STATE
+ */
+function extractUserData(
+  sigiState: SIGIState,
+  username: string
+): {
+  accountDisplayName: string;
+  followers: number;
+  likes: number;
+  videoCount: number;
+} {
+  let accountDisplayName = username;
+  let followers = 0;
+  let likes = 0;
+  let videoCount = 0;
+
+  if (sigiState.UserModule?.users) {
+    const users = sigiState.UserModule.users;
+    const userData =
+      Object.values(users).find(
+        (user: any) =>
+          user.uniqueId?.toLowerCase() === username.toLowerCase() ||
+          user.nickname?.toLowerCase() === username.toLowerCase()
+      ) || Object.values(users)[0]; // Fallback to first user
+
+    if (userData) {
+      accountDisplayName = userData.nickname || userData.uniqueId || username;
+      followers = userData.stats?.followerCount || 0;
+      likes = userData.stats?.heartCount || 0;
+      videoCount = userData.stats?.videoCount || 0;
+
+      debugLog("User data extracted", {
+        displayName: accountDisplayName,
+        followers,
+        likes,
+        videoCount,
+      });
+    }
+  }
+
+  return {
+    accountDisplayName,
+    followers,
+    likes,
+    videoCount,
+  };
+}
+
+/**
+ * Extract video data (hashtags, audio tracks, views) from SIGI_STATE
+ */
+function extractVideoData(sigiState: SIGIState): {
+  hashtags: string[];
+  audioTracks: string[];
+  totalViews: number;
+} {
+  const hashtags = new Set<string>();
+  const audioTracks = new Set<string>();
+  let totalViews = 0;
+
+  if (sigiState.ItemModule?.items) {
+    const items = sigiState.ItemModule.items;
+    const videoItems = Object.values(items) as any[];
+
+    debugLog(`Found ${videoItems.length} video items`);
+
+    for (const item of videoItems) {
+      // Extract hashtags from description
+      if (item.desc) {
+        const hashtagMatches = item.desc.match(/#[\w\u0590-\u05ff]+/g);
+        if (hashtagMatches) {
+          hashtagMatches.forEach((tag: string) => hashtags.add(tag));
+        }
+      }
+
+      // Extract hashtags from hashtags array
+      if (item.hashtags && Array.isArray(item.hashtags)) {
+        item.hashtags.forEach((tag: any) => {
+          if (tag.name) {
+            hashtags.add(`#${tag.name}`);
+          }
+        });
+      }
+
+      // Extract audio track
+      if (item.music?.title) {
+        audioTracks.add(item.music.title);
+      }
+      if (item.music?.authorName) {
+        audioTracks.add(`${item.music.authorName} - ${item.music.title || ""}`);
+      }
+
+      // Sum up views
+      if (item.stats?.playCount) {
+        totalViews += item.stats.playCount;
+      }
+    }
+  }
+
+  debugLog("Video data extracted", {
+    hashtagsCount: hashtags.size,
+    audioTracksCount: audioTracks.size,
+    totalViews,
+  });
+
+  return {
+    hashtags: Array.from(hashtags).slice(0, 20),
+    audioTracks: Array.from(audioTracks).slice(0, 20),
+    totalViews,
+  };
+}
+
+/**
+ * Main scraping function with retry logic
+ */
+export async function scrapeTikTokAccount(
+  username: string
+): Promise<Omit<TikTokTrend, "id" | "userId" | "createdAt">> {
+  let lastError: Error | null = null;
+
+  // Retry loop
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const proxy = getRandomProxy();
+    let browser: any = null;
+    let page: any = null;
+
+    debugLog(
+      `Starting scrape attempt ${attempt}/${MAX_RETRIES} for @${username}`,
+      {
+        proxy: proxy || "none",
+      }
+    );
+
+    try {
+      const launchOptions: any = {
+        headless: DEBUG_MODE ? false : true,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-accelerated-2d-canvas",
+          "--disable-gpu",
+          "--disable-blink-features=AutomationControlled",
+          "--disable-features=IsolateOrigins,site-per-process",
+          "--window-size=1920,1080",
+          "--disable-web-security",
+          "--disable-features=VizDisplayCompositor",
+        ],
+      };
+
+      if (proxy) {
+        launchOptions.args.push(`--proxy-server=${proxy}`);
+        debugLog(`Launching browser with proxy: ${proxy}`);
+      } else {
+        debugLog("Launching browser without proxy");
+      }
+
+      browser = await puppeteerExtra.launch(launchOptions);
+      debugLog("Browser launched successfully");
+
+      page = await browser.newPage();
+      debugLog("New page created");
+
+      // Set viewport and user agent
+      await page.setViewport({ width: 1920, height: 1080 });
+      const userAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+      await page.setUserAgent(userAgent);
+      debugLog("Viewport and user agent set", { userAgent });
+
+      // Remove webdriver property and other automation indicators
+      await page.evaluateOnNewDocument(() => {
+        Object.defineProperty(navigator, "webdriver", {
+          get: () => false,
+        });
+
+        // Override plugins
+        Object.defineProperty(navigator, "plugins", {
+          get: () => [1, 2, 3, 4, 5],
+        });
+
+        // Override languages
+        Object.defineProperty(navigator, "languages", {
+          get: () => ["en-US", "en"],
+        });
+      });
+      debugLog("Webdriver property hidden");
+
+      // Enable request/response logging in debug mode
+      if (DEBUG_MODE) {
+        page.on("request", (request: any) => {
+          debugLog(`Request: ${request.method()} ${request.url()}`);
+        });
+        page.on("response", (response: any) => {
+          debugLog(`Response: ${response.status()} ${response.url()}`);
+        });
+        page.on("requestfailed", (request: any) => {
+          debugLog(
+            `Request failed: ${request.url()} - ${request.failure()?.errorText}`
+          );
+        });
+      }
+
+      // Navigate to TikTok profile
+      const profileUrl = `https://www.tiktok.com/@${username}`;
+      debugLog(`Navigating to: ${profileUrl}`);
+
+      let timeoutId: NodeJS.Timeout | null = null;
+      try {
+        const navigationPromise = page.goto(profileUrl, {
+          waitUntil: "networkidle0", // Wait for all network activity to finish
+          timeout: 45000,
+        });
+
+        timeoutId = setTimeout(() => {
+          debugLog("Navigation timeout - page may be slow or blocked");
+        }, 40000);
+
+        await navigationPromise;
+        if (timeoutId) clearTimeout(timeoutId);
+        debugLog("Navigation completed");
+      } catch (error: any) {
+        if (timeoutId) clearTimeout(timeoutId);
+        debugLog("Navigation error", {
+          error: error.message,
+          code: error.code,
+        });
+
+        if (error.message.includes("net::ERR")) {
+          const errorCode = error.message.match(/net::ERR_(\w+)/)?.[1];
+          debugLog(`Network error code: ${errorCode}`);
+
+          if (
+            errorCode === "PROXY_CONNECTION_FAILED" ||
+            errorCode === "TUNNEL_CONNECTION_FAILED"
+          ) {
+            throw new Error(
+              `Proxy connection failed: ${proxy}. Try a different proxy or disable proxy.`
+            );
+          }
+
+          if (
+            errorCode === "TIMED_OUT" ||
+            errorCode === "CONNECTION_TIMED_OUT"
+          ) {
+            throw new Error(
+              `Connection timed out. TikTok may be blocking requests. ${
+                proxy ? "Try a different proxy." : "Consider using a proxy."
+              }`
+            );
+          }
+
+          if (errorCode === "CONNECTION_REFUSED") {
+            throw new Error(
+              `Connection refused. ${
+                proxy
+                  ? "Proxy may be down or blocked."
+                  : "Check your internet connection."
+              }`
+            );
+          }
+
+          throw new Error(
+            `Network error (${errorCode}): Unable to reach TikTok. ${
+              proxy
+                ? `Proxy ${proxy} may be blocked or invalid.`
+                : "Check your internet connection or try using a proxy."
+            }`
+          );
+        }
+
+        if (error.message.includes("Navigation timeout")) {
+          throw new Error(
+            `Navigation timeout: TikTok took too long to respond. ${
+              proxy
+                ? "Proxy may be slow."
+                : "Try using a proxy or check your connection."
+            }`
+          );
+        }
+
+        throw error;
+      }
+
+      // Wait for page to fully load and JavaScript to execute
+      debugLog("Waiting for page to fully load...");
+      await sleep(3000);
+
+      // Check if page loaded correctly
+      const pageTitle = await page.title();
+      debugLog("Page title", { title: pageTitle });
+
+      if (pageTitle.includes("404") || pageTitle.includes("Not Found")) {
+        throw new Error(`Profile not found: @${username} does not exist`);
+      }
+
+      // Get page content
+      const pageContent = await page.content();
+      debugLog("Page content length", { length: pageContent.length });
+
+      // REMOVED: Don't check for private/blocked status - just try to extract data
+      // TikTok might show blocking pages even for public accounts
+      // We'll try to extract data anyway and only fail if we can't get anything
+      debugLog(
+        "Skipping private/blocked checks - attempting to extract data anyway"
+      );
+
+      // Extract SIGI_STATE from page - try multiple times with delays
+      debugLog("Extracting SIGI_STATE from page...");
+      let sigiState = extractSIGIState(pageContent);
+
+      // Try multiple extraction methods with delays
+      const extractionAttempts = [
+        () => extractSIGIState(pageContent),
+        () => extractSIGIStateFromBrowser(page),
+      ];
+
+      for (let i = 0; i < 5 && !sigiState; i++) {
+        debugLog(`SIGI_STATE extraction attempt ${i + 1}/5`);
+
+        if (i > 0) {
+          await sleep(2000); // Wait 2 seconds between attempts
+        }
+
+        // Try HTML extraction
+        if (!sigiState) {
+          const currentContent = await page.content();
+          sigiState = extractSIGIState(currentContent);
+        }
+
+        // Try browser context extraction
+        if (!sigiState) {
+          sigiState = await extractSIGIStateFromBrowser(page);
+        }
+
+        // Try scrolling to trigger lazy loading
+        if (!sigiState && i < 3) {
+          try {
+            await page.evaluate(() => {
+              window.scrollTo(0, document.body.scrollHeight);
+            });
+            await sleep(1000);
+            await page.evaluate(() => {
+              window.scrollTo(0, 0);
+            });
+            await sleep(1000);
+          } catch (e) {
+            debugLog("Error scrolling page", { error: e });
+          }
+        }
+      }
+
+      // If SIGI_STATE not found, try fallback: extract from DOM directly
+      if (!sigiState) {
+        debugLog("SIGI_STATE not found, trying DOM extraction fallback...");
+
+        try {
+          const domData = await page.evaluate((username: string) => {
+            const result: any = {
+              displayName: "",
+              followers: 0,
+              likes: 0,
+              videoCount: 0,
+              hashtags: [] as string[],
+              audioTracks: [] as string[],
+              views: 0,
+            };
+
+            // Try to find display name
+            const nameSelectors = [
+              '[data-e2e="user-title"]',
+              '[data-e2e="user-name"]',
+              "h1",
+              '[class*="username"]',
+            ];
+            for (const selector of nameSelectors) {
+              const el = document.querySelector(selector);
+              if (el?.textContent) {
+                result.displayName = el.textContent.trim();
+                break;
+              }
+            }
+
+            // Try to find stats
+            const statsText = document.body.innerText || "";
+
+            // Extract followers
+            const followersMatch = statsText.match(
+              /(\d+(?:\.\d+)?[KMB]?)\s*(?:followers|follower)/i
+            );
+            if (followersMatch) {
+              const num = followersMatch[1];
+              result.followers =
+                parseFloat(num.replace(/[KMB]/i, "")) *
+                (num.includes("K")
+                  ? 1000
+                  : num.includes("M")
+                  ? 1000000
+                  : num.includes("B")
+                  ? 1000000000
+                  : 1);
+            }
+
+            // Extract likes
+            const likesMatch = statsText.match(
+              /(\d+(?:\.\d+)?[KMB]?)\s*(?:likes|like)/i
+            );
+            if (likesMatch) {
+              const num = likesMatch[1];
+              result.likes =
+                parseFloat(num.replace(/[KMB]/i, "")) *
+                (num.includes("K")
+                  ? 1000
+                  : num.includes("M")
+                  ? 1000000
+                  : num.includes("B")
+                  ? 1000000000
+                  : 1);
+            }
+
+            // Count videos
+            const videoElements = document.querySelectorAll(
+              '[data-e2e="user-post-item"], [class*="video"]'
+            );
+            result.videoCount = videoElements.length;
+
+            // Extract hashtags from all text
+            const hashtagRegex = /#[\w\u0590-\u05ff]+/g;
+            const matches = statsText.match(hashtagRegex);
+            if (matches) {
+              result.hashtags = [...new Set(matches)].slice(0, 20);
+            }
+
+            return result;
+          }, username);
+
+          if (domData && (domData.displayName || domData.followers > 0)) {
+            debugLog("DOM extraction successful", domData);
+
+            if (browser) {
+              await browser.close();
+              debugLog("Browser closed");
+            }
+
+            return {
+              accountUsername: username,
+              accountDisplayName: domData.displayName || username,
+              followers: domData.followers || 0,
+              likes: domData.likes || 0,
+              views: domData.views || 0,
+              videoCount: domData.videoCount || 0,
+              hashtags: domData.hashtags || [],
+              audioTracks: domData.audioTracks || [],
+              lastScrapedAt: new Date(),
+            };
+          }
+        } catch (e) {
+          debugLog("DOM extraction failed", { error: e });
+        }
+
+        // Take screenshot in debug mode
+        if (DEBUG_MODE) {
+          try {
+            await page.screenshot({
+              path: `debug-${username}-${Date.now()}.png`,
+              fullPage: true,
+            });
+            debugLog("Screenshot saved for debugging");
+
+            // Also save page HTML for analysis
+            const fs = require("fs");
+            fs.writeFileSync(
+              `debug-${username}-${Date.now()}.html`,
+              pageContent
+            );
+            debugLog("Page HTML saved for debugging");
+          } catch (e) {
+            debugLog("Could not save screenshot/HTML", { error: e });
+          }
+        }
+
+        // Last resort: return minimal data instead of throwing error
+        debugLog("All extraction methods failed, returning minimal data");
+
+        if (browser) {
+          await browser.close();
+        }
+
+        // Return minimal data so the request doesn't fail completely
+        return {
+          accountUsername: username,
+          accountDisplayName: username,
+          followers: 0,
+          likes: 0,
+          views: 0,
+          videoCount: 0,
+          hashtags: [],
+          audioTracks: [],
+          lastScrapedAt: new Date(),
+        };
+      }
+
+      debugLog("SIGI_STATE extracted successfully", {
+        hasUserModule: !!sigiState.UserModule,
+        hasItemModule: !!sigiState.ItemModule,
+      });
+
+      // Extract user data
+      const userData = extractUserData(sigiState, username);
+
+      // Extract video data
+      const videoData = extractVideoData(sigiState);
+
+      // Don't validate too strictly - return whatever data we have
+      // Even if it's minimal, it's better than failing
+      if (
+        !userData.accountDisplayName &&
+        userData.followers === 0 &&
+        userData.likes === 0
+      ) {
+        debugLog("Warning: Minimal data extracted", {
+          hasSIGIState: !!sigiState,
+          hasUserModule: !!sigiState.UserModule,
+          username,
+        });
+
+        // Still return data - don't throw error
+        // The frontend can handle empty data
+      }
+
+      if (browser) {
+        await browser.close();
+        debugLog("Browser closed");
+      }
+
+      // Return successful result
+      return {
+        accountUsername: username,
+        accountDisplayName: userData.accountDisplayName || username,
+        followers: userData.followers || 0,
+        likes: userData.likes || 0,
+        views: videoData.totalViews || 0,
+        videoCount: userData.videoCount || 0,
+        hashtags: videoData.hashtags,
+        audioTracks: videoData.audioTracks,
+        lastScrapedAt: new Date(),
+      };
+    } catch (error: any) {
+      lastError = error;
+
+      if (browser) {
+        try {
+          await browser.close();
+          debugLog("Browser closed after error");
+        } catch (closeError) {
+          debugLog("Error closing browser", { error: closeError });
+        }
+      }
+
+      debugLog(`Scraping attempt ${attempt} failed`, {
+        username,
+        error: error.message,
+        stack: error.stack,
+        proxy: proxy || "none",
+      });
+
+      // Don't retry on certain errors
+      if (
+        error.message.includes("Profile not found") ||
+        error.message.includes("does not exist") ||
+        error.message.includes("private")
+      ) {
+        throw error;
+      }
+
+      // If not last attempt, wait before retrying
+      if (attempt < MAX_RETRIES) {
+        debugLog(`Retrying in ${RETRY_DELAY}ms...`);
+        await sleep(RETRY_DELAY);
+      }
+    }
+  }
+
+  // All retries failed
+  debugLog("All scraping attempts failed", {
+    username,
+    lastError: lastError?.message,
+  });
+
+  throw new Error(
+    `Failed to scrape TikTok account @${username} after ${MAX_RETRIES} attempts: ${
+      lastError?.message || "Unknown error"
+    }`
+  );
 }

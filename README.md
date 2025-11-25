@@ -36,6 +36,11 @@ FIREBASE_ADMIN_CLIENT_EMAIL=your_client_email
 FIREBASE_ADMIN_PRIVATE_KEY=your_private_key
 
 GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-2.5-flash
+# Default: gemini-2.5-flash (latest and fastest)
+# Available models: gemini-pro, gemini-1.5-flash, gemini-1.5-pro, gemini-2.5-flash
+# Check available models: node scripts/check-gemini-models.js
+# See GEMINI_MODELS.md for details and pricing
 
 PADDLE_API_KEY=your_paddle_api_key
 PADDLE_SANDBOX_API_KEY=your_paddle_sandbox_key

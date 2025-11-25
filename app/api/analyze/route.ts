@@ -11,12 +11,24 @@ import type { AIAnalysis } from '@/types'
 
 export async function POST(request: NextRequest) {
   try {
-    const { trendId, userId, generateIdeas } = await request.json()
+    const body = await request.json()
+    const { trendId, userId, generateIdeas } = body
+
+    console.log('Analyze API called:', { trendId, userId, generateIdeas })
 
     if (!trendId || !userId) {
       return NextResponse.json(
         { error: 'trendId and userId are required' },
         { status: 400 }
+      )
+    }
+
+    // Check if Gemini API key is set
+    if (!process.env.GEMINI_API_KEY) {
+      console.error('GEMINI_API_KEY is not set')
+      return NextResponse.json(
+        { error: 'AI service is not configured. Please set GEMINI_API_KEY.' },
+        { status: 500 }
       )
     }
 
@@ -30,14 +42,22 @@ export async function POST(request: NextRequest) {
     }
 
     const trendData = trendDoc.data()
+    console.log('Trend data retrieved:', { 
+      username: trendData?.accountUsername,
+      followers: trendData?.followers 
+    })
 
     if (generateIdeas) {
       // Generate video ideas
+      console.log('Generating video ideas...')
       const ideas = await generateVideoIdeas(trendData as any, 10)
-      return NextResponse.json(ideas)
+      console.log('Video ideas generated:', ideas.length)
+      return NextResponse.json({ success: true, ideas })
     } else {
       // Generate AI analysis
+      console.log('Generating AI analysis...')
       const recommendations = await analyzeTikTokTrend(trendData as any)
+      console.log('Analysis generated:', Object.keys(recommendations))
 
       // Save analysis to Firestore
       const analysisId = `${trendId}_${Date.now()}`
@@ -56,14 +76,19 @@ export async function POST(request: NextRequest) {
       })
 
       return NextResponse.json({
+        success: true,
         id: analysisId,
         ...analysisData,
       })
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Analyze API error:', error)
+    console.error('Error stack:', error.stack)
     return NextResponse.json(
-      { error: 'Failed to generate analysis' },
+      { 
+        error: error.message || 'Failed to generate analysis',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      },
       { status: 500 }
     )
   }

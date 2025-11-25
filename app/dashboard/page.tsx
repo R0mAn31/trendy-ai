@@ -99,16 +99,21 @@ export default function DashboardPage() {
         body: JSON.stringify({ trendId, userId: user.id }),
       })
 
+      const data = await response.json()
+
       if (!response.ok) {
-        throw new Error('Failed to analyze')
+        throw new Error(data.error || 'Failed to analyze')
       }
 
-      const analysis = await response.json()
-      setSelectedAnalysis(analysis)
-      setShowAnalysisModal(true)
-    } catch (error) {
+      if (data.success && data.id) {
+        setSelectedAnalysis(data)
+        setShowAnalysisModal(true)
+      } else {
+        throw new Error('Invalid response from server')
+      }
+    } catch (error: any) {
       console.error('Analysis error:', error)
-      alert('Failed to generate analysis. Please try again.')
+      alert(`Failed to generate analysis: ${error.message || 'Please try again.'}`)
     } finally {
       setAnalyzingTrendId(null)
     }
@@ -125,15 +130,23 @@ export default function DashboardPage() {
         body: JSON.stringify({ trendId, userId: user.id, generateIdeas: true }),
       })
 
+      const data = await response.json()
+
       if (!response.ok) {
-        throw new Error('Failed to generate ideas')
+        throw new Error(data.error || 'Failed to generate ideas')
       }
 
-      const ideas = await response.json()
-      alert(`Generated ${ideas.length} video ideas! Check the analysis for details.`)
-    } catch (error) {
+      if (data.success && data.ideas) {
+        const ideas = data.ideas
+        alert(`✅ Generated ${ideas.length} video ideas! Check the console for details.`)
+        console.log('Generated ideas:', ideas)
+        // You could also show these in a modal or save them
+      } else {
+        throw new Error('Invalid response from server')
+      }
+    } catch (error: any) {
       console.error('Ideas generation error:', error)
-      alert('Failed to generate ideas. Please try again.')
+      alert(`Failed to generate ideas: ${error.message || 'Please try again.'}`)
     } finally {
       setGeneratingTrendId(null)
     }
