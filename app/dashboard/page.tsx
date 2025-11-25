@@ -138,9 +138,8 @@ export default function DashboardPage() {
 
       if (data.success && data.ideas) {
         const ideas = data.ideas
-        alert(`✅ Generated ${ideas.length} video ideas! Check the console for details.`)
-        console.log('Generated ideas:', ideas)
-        // You could also show these in a modal or save them
+        alert(`✅ Generated ${ideas.length} video ideas! They've been saved. Click on the account to view them.`)
+        // Don't log to console - ideas are saved in Firestore
       } else {
         throw new Error('Invalid response from server')
       }

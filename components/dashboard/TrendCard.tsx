@@ -3,6 +3,7 @@
 import { TikTokTrend } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { formatDistanceToNow } from 'date-fns'
+import Link from 'next/link'
 
 interface TrendCardProps {
   trend: TikTokTrend
@@ -22,14 +23,17 @@ export function TrendCard({
   return (
     <div className="card-custom p-6 animate-fade-in-up hover-lift">
       <div>
-        <h2 className="text-2xl font-bold mb-2 text-neutral-900">
-          <span className="text-primary-600">@</span>{trend.accountUsername}
-          {trend.accountDisplayName && (
-            <span className="text-base font-normal text-neutral-600 ml-2">
-              {trend.accountDisplayName}
-            </span>
-          )}
-        </h2>
+        <Link href={`/dashboard/trend/${trend.id}`}>
+          <h2 className="text-2xl font-bold mb-2 text-neutral-900 hover:text-primary-600 transition-colors cursor-pointer">
+            <span className="text-primary-600">@</span>{trend.accountUsername}
+            {trend.accountDisplayName && (
+              <span className="text-base font-normal text-neutral-600 ml-2">
+                {trend.accountDisplayName}
+              </span>
+            )}
+            <span className="text-sm text-neutral-400 ml-2">→</span>
+          </h2>
+        </Link>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 my-6">
           <div className="bg-gradient-primary/10 rounded-lg p-4 border border-primary-200">

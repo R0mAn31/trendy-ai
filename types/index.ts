@@ -55,12 +55,26 @@ export interface AIAnalysis {
 
 // Video Ideas
 export interface VideoIdea {
+  id?: string
   title: string
   script: string
   hashtags: string[]
   audioSuggestion: string
   postingTime: string
   format: string
+  createdAt?: Date
+  trendId?: string
+  userId?: string
+}
+
+// Trend Context/Notes
+export interface TrendContext {
+  id: string
+  userId: string
+  trendId: string
+  notes: string
+  createdAt: Date
+  updatedAt: Date
 }
 
 // Paddle types
