@@ -36,6 +36,7 @@ export default function TrendDetailPage() {
     format: '',
   })
   const [deletingIdeaId, setDeletingIdeaId] = useState<string | null>(null)
+  const [deletingTrend, setDeletingTrend] = useState(false)
 
   useEffect(() => {
     if (user && trendId) {
@@ -224,6 +225,35 @@ export default function TrendDetailPage() {
     }
   }
 
+  const handleDeleteTrend = async () => {
+    if (!user || !trend) return
+
+    if (!confirm(`Are you sure you want to delete @${trend.accountUsername}? This will permanently delete the account and all related data (analyses, ideas, notes).`)) {
+      return
+    }
+
+    setDeletingTrend(true)
+    try {
+      const response = await fetch(`/api/trend/${trendId}?userId=${user.id}`, {
+        method: 'DELETE',
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete account')
+      }
+
+      alert('✅ Account deleted successfully!')
+      router.push('/dashboard')
+    } catch (error: any) {
+      console.error('Failed to delete account:', error)
+      alert(`Failed to delete account: ${error.message}`)
+    } finally {
+      setDeletingTrend(false)
+    }
+  }
+
   if (userLoading || loading) {
     return (
       <div className="drawer lg:drawer-open">
@@ -266,9 +296,20 @@ export default function TrendDetailPage() {
           <div className="container mx-auto max-w-6xl">
             {/* Header */}
             <div className="mb-6">
-              <Button variant="ghost" onClick={() => router.push('/dashboard')} className="mb-4">
-                ← Back to Dashboard
-              </Button>
+              <div className="flex justify-between items-start mb-4">
+                <Button variant="ghost" onClick={() => router.push('/dashboard')}>
+                  ← Back to Dashboard
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleDeleteTrend}
+                  loading={deletingTrend}
+                  disabled={deletingTrend}
+                  className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400 hover:bg-red-50"
+                >
+                  {deletingTrend ? 'Deleting...' : 'Delete Account'}
+                </Button>
+              </div>
               <h1 className="text-4xl font-bold mb-2 text-gradient-primary">
                 @{trend.accountUsername}
               </h1>

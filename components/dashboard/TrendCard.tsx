@@ -9,16 +9,20 @@ interface TrendCardProps {
   trend: TikTokTrend
   onAnalyze: (trendId: string) => void
   onGenerateIdeas: (trendId: string) => void
+  onDelete: (trendId: string) => void
   analyzing?: boolean
   generating?: boolean
+  deleting?: boolean
 }
 
 export function TrendCard({
   trend,
   onAnalyze,
   onGenerateIdeas,
+  onDelete,
   analyzing,
   generating,
+  deleting,
 }: TrendCardProps) {
   return (
     <div className="card-custom p-6 animate-fade-in-up hover-lift">
@@ -78,23 +82,38 @@ export function TrendCard({
           {formatDistanceToNow(trend.lastScrapedAt, { addSuffix: true })}
         </div>
 
-        <div className="flex justify-end gap-3 mt-6">
+        <div className="flex justify-between items-center mt-6">
           <Button
             variant="outline"
-            onClick={() => onAnalyze(trend.id)}
-            loading={analyzing}
-            disabled={analyzing || generating}
+            onClick={() => {
+              if (confirm(`Are you sure you want to delete @${trend.accountUsername}? This will also delete all analyses, ideas, and notes.`)) {
+                onDelete(trend.id)
+              }
+            }}
+            loading={deleting}
+            disabled={analyzing || generating || deleting}
+            className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400 hover:bg-red-50"
           >
-            Analyze with AI
+            {deleting ? 'Deleting...' : 'Delete'}
           </Button>
-          <Button
-            variant="primary"
-            onClick={() => onGenerateIdeas(trend.id)}
-            loading={generating}
-            disabled={analyzing || generating}
-          >
-            Generate 10 Ideas
-          </Button>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => onAnalyze(trend.id)}
+              loading={analyzing}
+              disabled={analyzing || generating || deleting}
+            >
+              Analyze with AI
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => onGenerateIdeas(trend.id)}
+              loading={generating}
+              disabled={analyzing || generating || deleting}
+            >
+              Generate 10 Ideas
+            </Button>
+          </div>
         </div>
       </div>
     </div>

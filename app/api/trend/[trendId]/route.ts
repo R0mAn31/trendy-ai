@@ -214,3 +214,77 @@ export async function GET(
   }
 }
 
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { trendId: string } }
+) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const userId = searchParams.get('userId')
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'userId is required' },
+        { status: 400 }
+      )
+    }
+
+    const { trendId } = params
+    console.log('Deleting trend:', { trendId, userId })
+    
+    const adminDb = getAdminDb()
+
+    // Delete trend document
+    const trendPath = getSavedTrendDocPath(userId, trendId)
+    const trendRef = adminDb.doc(trendPath)
+    const trendDoc = await trendRef.get()
+
+    if (!trendDoc.exists) {
+      return NextResponse.json(
+        { error: 'Trend not found' },
+        { status: 404 }
+      )
+    }
+
+    // Delete all related analyses
+    const analysesRef = adminDb.collection(getAnalysisCollectionPath(userId))
+    const analysesSnapshot = await analysesRef
+      .where('trendId', '==', trendId)
+      .get()
+    
+    const deleteAnalysesPromises = analysesSnapshot.docs.map((doc) => doc.ref.delete())
+    await Promise.all(deleteAnalysesPromises)
+    console.log(`Deleted ${analysesSnapshot.size} analyses`)
+
+    // Delete all video ideas
+    const ideasRef = adminDb.collection(getVideoIdeasCollectionPath(userId, trendId))
+    const ideasSnapshot = await ideasRef.get()
+    
+    const deleteIdeasPromises = ideasSnapshot.docs.map((doc) => doc.ref.delete())
+    await Promise.all(deleteIdeasPromises)
+    console.log(`Deleted ${ideasSnapshot.size} video ideas`)
+
+    // Delete context/notes
+    const contextRef = adminDb.doc(getTrendContextDocPath(userId, trendId))
+    const contextDoc = await contextRef.get()
+    if (contextDoc.exists) {
+      await contextRef.delete()
+      console.log('Deleted trend context')
+    }
+
+    // Finally, delete the trend itself
+    await trendRef.delete()
+    console.log('Deleted trend document')
+
+    return NextResponse.json({
+      success: true,
+      message: 'Trend and all related data deleted successfully',
+    })
+  } catch (error: any) {
+    console.error('Delete trend error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to delete trend' },
+      { status: 500 }
+    )
+  }
+}

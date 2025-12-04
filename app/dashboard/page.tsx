@@ -28,6 +28,7 @@ export default function DashboardPage() {
   const [scraping, setScraping] = useState(false)
   const [analyzingTrendId, setAnalyzingTrendId] = useState<string | null>(null)
   const [generatingTrendId, setGeneratingTrendId] = useState<string | null>(null)
+  const [deletingTrendId, setDeletingTrendId] = useState<string | null>(null)
   const [selectedAnalysis, setSelectedAnalysis] = useState<AIAnalysis | null>(null)
   const [showAnalysisModal, setShowAnalysisModal] = useState(false)
 
@@ -151,6 +152,32 @@ export default function DashboardPage() {
     }
   }
 
+  const handleDelete = async (trendId: string) => {
+    if (!user) return
+
+    setDeletingTrendId(trendId)
+    try {
+      const response = await fetch(`/api/trend/${trendId}?userId=${user.id}`, {
+        method: 'DELETE',
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete account')
+      }
+
+      // Reload trends list
+      await loadTrends()
+      alert('✅ Account deleted successfully!')
+    } catch (error: any) {
+      console.error('Delete error:', error)
+      alert(`Failed to delete account: ${error.message || 'Please try again.'}`)
+    } finally {
+      setDeletingTrendId(null)
+    }
+  }
+
   if (userLoading || subscriptionLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -209,8 +236,10 @@ export default function DashboardPage() {
                     trend={trend}
                     onAnalyze={handleAnalyze}
                     onGenerateIdeas={handleGenerateIdeas}
+                    onDelete={handleDelete}
                     analyzing={analyzingTrendId === trend.id}
                     generating={generatingTrendId === trend.id}
+                    deleting={deletingTrendId === trend.id}
                   />
                 ))}
               </div>

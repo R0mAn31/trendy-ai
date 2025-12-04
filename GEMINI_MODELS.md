@@ -104,3 +104,5 @@ GEMINI_MODEL=gemini-1.5-flash  # Optional, defaults to gemini-1.5-flash
 - Pricing is subject to change - always check official docs
 - Free tier has rate limits
 - Some models require specific API versions
+
+

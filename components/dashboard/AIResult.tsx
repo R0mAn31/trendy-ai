@@ -102,3 +102,5 @@ export function AIResult({ analysis }: AIResultProps) {
   )
 }
 
+
+

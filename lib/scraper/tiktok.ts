@@ -54,11 +54,15 @@ interface SIGIState {
         avatarMedium?: string;
         avatarThumb?: string;
         verified?: boolean;
+        privateAccount?: boolean;
+        secUid?: string;
+        userId?: string;
         stats?: {
           followerCount?: number;
           followingCount?: number;
           heartCount?: number;
           videoCount?: number;
+          diggCount?: number;
         };
       };
     };
@@ -66,10 +70,17 @@ interface SIGIState {
   ItemModule?: {
     items?: {
       [key: string]: {
+        id?: string;
         desc?: string;
+        createTime?: number;
+        text?: string;
         music?: {
+          id?: string;
           title?: string;
           authorName?: string;
+          original?: boolean;
+          playUrl?: string;
+          duration?: number;
         };
         stats?: {
           playCount?: number;
@@ -77,11 +88,34 @@ interface SIGIState {
           commentCount?: number;
           shareCount?: number;
         };
+        videoMeta?: {
+          width?: number;
+          height?: number;
+          duration?: number;
+        };
         hashtags?: Array<{
+          id?: string;
           name?: string;
+          title?: string;
         }>;
+        mentions?: string[];
+        covers?: {
+          default?: string;
+          origin?: string;
+          dynamic?: string;
+        };
+        videoUrl?: string;
+        authorMeta?: {
+          id?: string;
+          name?: string;
+          uniqueId?: string;
+        };
       };
     };
+  };
+  // TikTok also stores data in __DEFAULT_SCOPE__
+  __DEFAULT_SCOPE__?: {
+    [key: string]: any;
   };
 }
 
@@ -177,43 +211,59 @@ function extractSIGIState(pageContent: string): SIGIState | null {
 }
 
 /**
- * Extract SIGI_STATE from browser context (more reliable)
+ * Extract SIGI_STATE from browser context (more reliable - similar to tiktok-scraper)
+ * This is the most reliable method as it accesses the actual JavaScript objects
  */
 async function extractSIGIStateFromBrowser(
   page: any
 ): Promise<SIGIState | null> {
   try {
     const sigiState = await page.evaluate(() => {
-      // Method 1: Try to access window.__UNIVERSAL_DATA_FOR_REHYDRATION__
-      if ((window as any).__UNIVERSAL_DATA_FOR_REHYDRATION__) {
-        const data = (window as any).__UNIVERSAL_DATA_FOR_REHYDRATION__;
+      const win = window as any;
+      
+      // Method 1: Try to access window.__UNIVERSAL_DATA_FOR_REHYDRATION__ (most reliable)
+      if (win.__UNIVERSAL_DATA_FOR_REHYDRATION__) {
+        const data = win.__UNIVERSAL_DATA_FOR_REHYDRATION__;
+        // Try different data structures (TikTok uses various formats)
         if (data["__DEFAULT_SCOPE__"]?.["webapp.user-detail"]) {
           return data["__DEFAULT_SCOPE__"]["webapp.user-detail"];
         }
         if (data.UserModule || data.ItemModule) {
           return data;
         }
+        // Return full data structure if it exists
         return data;
       }
 
-      // Method 2: Try to find script tag with data
+      // Method 2: Try to access window.SIGI_STATE (alternative location)
+      if (win.SIGI_STATE) {
+        const data = win.SIGI_STATE;
+        if (data.UserModule || data.ItemModule) {
+          return data;
+        }
+        return data;
+      }
+
+      // Method 3: Try to find script tag with data (fallback)
       const scripts = Array.from(document.querySelectorAll("script"));
       for (const script of scripts) {
         if (
           script.id === "__UNIVERSAL_DATA_FOR_REHYDRATION__" ||
           script.textContent?.includes("UserModule") ||
-          script.textContent?.includes("ItemModule")
+          script.textContent?.includes("ItemModule") ||
+          script.textContent?.includes("__UNIVERSAL_DATA_FOR_REHYDRATION__")
         ) {
           try {
             const content = script.textContent || "";
 
-            // Try to find JSON object
-            let jsonMatch = content.match(/({[\s\S]*"UserModule"[\s\S]*})/);
+            // Try to find JSON object with more flexible matching
+            let jsonMatch = content.match(/({[\s\S]*?"UserModule"[\s\S]*?})/);
             if (!jsonMatch) {
-              jsonMatch = content.match(/({[\s\S]*"ItemModule"[\s\S]*})/);
+              jsonMatch = content.match(/({[\s\S]*?"ItemModule"[\s\S]*?})/);
             }
             if (!jsonMatch) {
-              jsonMatch = content.match(/({[\s\S]*})/);
+              // Try to find large JSON objects
+              jsonMatch = content.match(/({[\s\S]{100,}})/);
             }
 
             if (jsonMatch) {
@@ -223,6 +273,10 @@ async function extractSIGIStateFromBrowser(
               }
               if (parsed["__DEFAULT_SCOPE__"]?.["webapp.user-detail"]) {
                 return parsed["__DEFAULT_SCOPE__"]["webapp.user-detail"];
+              }
+              // Return if it looks like valid TikTok data
+              if (parsed["__DEFAULT_SCOPE__"] || Object.keys(parsed).length > 5) {
+                return parsed;
               }
             }
           } catch (e) {
@@ -241,7 +295,7 @@ async function extractSIGIStateFromBrowser(
 }
 
 /**
- * Validate and extract user data from SIGI_STATE
+ * Extract comprehensive user profile data from SIGI_STATE (similar to tiktok-scraper's getUserProfileInfo)
  */
 function extractUserData(
   sigiState: SIGIState,
@@ -251,12 +305,25 @@ function extractUserData(
   followers: number;
   likes: number;
   videoCount: number;
+  following?: number;
+  verified?: boolean;
+  signature?: string;
+  avatarUrl?: string;
+  userId?: string;
+  secUid?: string;
 } {
   let accountDisplayName = username;
   let followers = 0;
   let likes = 0;
   let videoCount = 0;
+  let following = 0;
+  let verified = false;
+  let signature = "";
+  let avatarUrl = "";
+  let userId = "";
+  let secUid = "";
 
+  // Try to extract from UserModule (similar to tiktok-scraper)
   if (sigiState.UserModule?.users) {
     const users = sigiState.UserModule.users;
     const userData =
@@ -271,13 +338,47 @@ function extractUserData(
       followers = userData.stats?.followerCount || 0;
       likes = userData.stats?.heartCount || 0;
       videoCount = userData.stats?.videoCount || 0;
+      following = userData.stats?.followingCount || 0;
+      verified = userData.verified || false;
+      signature = userData.signature || "";
+      avatarUrl = userData.avatarLarger || userData.avatarMedium || userData.avatarThumb || "";
+      userId = userData.userId || "";
+      secUid = userData.secUid || "";
 
-      debugLog("User data extracted", {
+      debugLog("User data extracted (comprehensive)", {
         displayName: accountDisplayName,
         followers,
         likes,
         videoCount,
+        following,
+        verified,
+        signature: signature.substring(0, 50),
+        hasAvatar: !!avatarUrl,
+        userId,
+        secUid: secUid.substring(0, 20),
       });
+    }
+  }
+
+  // Try to extract from __DEFAULT_SCOPE__ (alternative TikTok data structure)
+  if (!accountDisplayName || followers === 0) {
+    const defaultScope = sigiState.__DEFAULT_SCOPE__;
+    if (defaultScope) {
+      // Look for user-detail data
+      const userDetail = defaultScope["webapp.user-detail"];
+      if (userDetail?.userInfo) {
+        const userInfo = userDetail.userInfo;
+        accountDisplayName = userInfo.nickname || userInfo.uniqueId || accountDisplayName;
+        followers = userInfo.stats?.followerCount || followers;
+        likes = userInfo.stats?.heartCount || likes;
+        videoCount = userInfo.stats?.videoCount || videoCount;
+        following = userInfo.stats?.followingCount || following;
+        verified = userInfo.verified || verified;
+        signature = userInfo.signature || signature;
+        avatarUrl = userInfo.avatarLarger || userInfo.avatarMedium || avatarUrl;
+        userId = userInfo.userId || userId;
+        secUid = userInfo.secUid || secUid;
+      }
     }
   }
 
@@ -286,20 +387,32 @@ function extractUserData(
     followers,
     likes,
     videoCount,
+    following,
+    verified,
+    signature,
+    avatarUrl,
+    userId,
+    secUid,
   };
 }
 
 /**
- * Extract video data (hashtags, audio tracks, views) from SIGI_STATE
+ * Extract comprehensive video data from SIGI_STATE (similar to tiktok-scraper's collector format)
  */
 function extractVideoData(sigiState: SIGIState): {
   hashtags: string[];
   audioTracks: string[];
   totalViews: number;
+  totalLikes: number;
+  totalComments: number;
+  totalShares: number;
 } {
   const hashtags = new Set<string>();
   const audioTracks = new Set<string>();
   let totalViews = 0;
+  let totalLikes = 0;
+  let totalComments = 0;
+  let totalShares = 0;
 
   if (sigiState.ItemModule?.items) {
     const items = sigiState.ItemModule.items;
@@ -308,15 +421,16 @@ function extractVideoData(sigiState: SIGIState): {
     debugLog(`Found ${videoItems.length} video items`);
 
     for (const item of videoItems) {
-      // Extract hashtags from description
-      if (item.desc) {
-        const hashtagMatches = item.desc.match(/#[\w\u0590-\u05ff]+/g);
+      // Extract hashtags from description/text (similar to tiktok-scraper)
+      const text = item.desc || item.text || "";
+      if (text) {
+        const hashtagMatches = text.match(/#[\w\u0590-\u05ff]+/g);
         if (hashtagMatches) {
           hashtagMatches.forEach((tag: string) => hashtags.add(tag));
         }
       }
 
-      // Extract hashtags from hashtags array
+      // Extract hashtags from hashtags array (structured format)
       if (item.hashtags && Array.isArray(item.hashtags)) {
         item.hashtags.forEach((tag: any) => {
           if (tag.name) {
@@ -325,31 +439,57 @@ function extractVideoData(sigiState: SIGIState): {
         });
       }
 
-      // Extract audio track
-      if (item.music?.title) {
-        audioTracks.add(item.music.title);
-      }
-      if (item.music?.authorName) {
-        audioTracks.add(`${item.music.authorName} - ${item.music.title || ""}`);
+      // Extract mentions (they often contain hashtag-like content)
+      if (item.mentions && Array.isArray(item.mentions)) {
+        item.mentions.forEach((mention: string) => {
+          if (mention.startsWith("#")) {
+            hashtags.add(mention);
+          }
+        });
       }
 
-      // Sum up views
-      if (item.stats?.playCount) {
-        totalViews += item.stats.playCount;
+      // Extract audio/music data (comprehensive like tiktok-scraper)
+      if (item.music) {
+        const music = item.music;
+        if (music.title) {
+          if (music.authorName) {
+            audioTracks.add(`${music.authorName} - ${music.title}`);
+          } else {
+            audioTracks.add(music.title);
+          }
+        }
+        // Also add music ID for reference
+        if (music.id) {
+          debugLog(`Found music ID: ${music.id}`);
+        }
+      }
+
+      // Sum up all stats (comprehensive like tiktok-scraper)
+      if (item.stats) {
+        totalViews += item.stats.playCount || 0;
+        totalLikes += item.stats.diggCount || 0;
+        totalComments += item.stats.commentCount || 0;
+        totalShares += item.stats.shareCount || 0;
       }
     }
   }
 
-  debugLog("Video data extracted", {
+  debugLog("Video data extracted (comprehensive)", {
     hashtagsCount: hashtags.size,
     audioTracksCount: audioTracks.size,
     totalViews,
+    totalLikes,
+    totalComments,
+    totalShares,
   });
 
   return {
-    hashtags: Array.from(hashtags).slice(0, 20),
-    audioTracks: Array.from(audioTracks).slice(0, 20),
+    hashtags: Array.from(hashtags).slice(0, 30), // Increased limit
+    audioTracks: Array.from(audioTracks).slice(0, 30), // Increased limit
     totalViews,
+    totalLikes,
+    totalComments,
+    totalShares,
   };
 }
 
@@ -404,12 +544,26 @@ export async function scrapeTikTokAccount(
       page = await browser.newPage();
       debugLog("New page created");
 
-      // Set viewport and user agent
+      // Set viewport and user agent (similar to tiktok-scraper headers)
       await page.setViewport({ width: 1920, height: 1080 });
       const userAgent =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.80 Safari/537.36";
       await page.setUserAgent(userAgent);
-      debugLog("Viewport and user agent set", { userAgent });
+      
+      // Set headers similar to tiktok-scraper (important for TikTok API access)
+      await page.setExtraHTTPHeaders({
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://www.tiktok.com/",
+        "Origin": "https://www.tiktok.com",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Upgrade-Insecure-Requests": "1",
+      });
+      
+      debugLog("Viewport, user agent, and headers set", { userAgent });
 
       // Remove webdriver property and other automation indicators
       await page.evaluateOnNewDocument(() => {
@@ -549,15 +703,11 @@ export async function scrapeTikTokAccount(
       );
 
       // Extract SIGI_STATE from page - try multiple times with delays
+      // Similar approach to tiktok-scraper library
       debugLog("Extracting SIGI_STATE from page...");
       let sigiState = extractSIGIState(pageContent);
 
-      // Try multiple extraction methods with delays
-      const extractionAttempts = [
-        () => extractSIGIState(pageContent),
-        () => extractSIGIStateFromBrowser(page),
-      ];
-
+      // Try multiple extraction methods with delays (like tiktok-scraper retry logic)
       for (let i = 0; i < 5 && !sigiState; i++) {
         debugLog(`SIGI_STATE extraction attempt ${i + 1}/5`);
 
@@ -571,22 +721,55 @@ export async function scrapeTikTokAccount(
           sigiState = extractSIGIState(currentContent);
         }
 
-        // Try browser context extraction
+        // Try browser context extraction (most reliable - similar to tiktok-scraper)
         if (!sigiState) {
           sigiState = await extractSIGIStateFromBrowser(page);
         }
 
-        // Try scrolling to trigger lazy loading
+        // Try to extract from window.__UNIVERSAL_DATA_FOR_REHYDRATION__ directly
+        if (!sigiState) {
+          try {
+            sigiState = await page.evaluate(() => {
+              const win = window as any;
+              if (win.__UNIVERSAL_DATA_FOR_REHYDRATION__) {
+                const data = win.__UNIVERSAL_DATA_FOR_REHYDRATION__;
+                // Try different paths
+                if (data["__DEFAULT_SCOPE__"]?.["webapp.user-detail"]) {
+                  return data["__DEFAULT_SCOPE__"]["webapp.user-detail"];
+                }
+                if (data.UserModule || data.ItemModule) {
+                  return data;
+                }
+                return data;
+              }
+              return null;
+            });
+          } catch (e) {
+            debugLog("Error extracting from window object", { error: e });
+          }
+        }
+
+        // Try scrolling to trigger lazy loading (loads more videos/data)
         if (!sigiState && i < 3) {
           try {
+            // Scroll down to load more content
             await page.evaluate(() => {
               window.scrollTo(0, document.body.scrollHeight);
             });
-            await sleep(1000);
+            await sleep(1500);
+            
+            // Scroll back up
             await page.evaluate(() => {
               window.scrollTo(0, 0);
             });
             await sleep(1000);
+            
+            // Try extraction again after scroll
+            const newContent = await page.content();
+            sigiState = extractSIGIState(newContent);
+            if (!sigiState) {
+              sigiState = await extractSIGIStateFromBrowser(page);
+            }
           } catch (e) {
             debugLog("Error scrolling page", { error: e });
           }
@@ -748,22 +931,26 @@ export async function scrapeTikTokAccount(
         hasItemModule: !!sigiState.ItemModule,
       });
 
-      // Extract user data
+      // Extract user data (comprehensive like tiktok-scraper's getUserProfileInfo)
       const userData = extractUserData(sigiState, username);
 
-      // Extract video data
+      // Extract video data (comprehensive like tiktok-scraper's collector format)
       const videoData = extractVideoData(sigiState);
+
+      // Use video data likes if user data likes is 0 (more accurate)
+      const finalLikes = userData.likes > 0 ? userData.likes : videoData.totalLikes;
 
       // Don't validate too strictly - return whatever data we have
       // Even if it's minimal, it's better than failing
       if (
         !userData.accountDisplayName &&
         userData.followers === 0 &&
-        userData.likes === 0
+        finalLikes === 0
       ) {
         debugLog("Warning: Minimal data extracted", {
           hasSIGIState: !!sigiState,
           hasUserModule: !!sigiState.UserModule,
+          hasItemModule: !!sigiState.ItemModule,
           username,
         });
 
@@ -776,12 +963,23 @@ export async function scrapeTikTokAccount(
         debugLog("Browser closed");
       }
 
-      // Return successful result
+      // Return successful result (comprehensive data like tiktok-scraper)
+      debugLog("Scraping completed successfully", {
+        accountDisplayName: userData.accountDisplayName,
+        followers: userData.followers,
+        likes: finalLikes,
+        views: videoData.totalViews,
+        videoCount: userData.videoCount,
+        hashtagsCount: videoData.hashtags.length,
+        audioTracksCount: videoData.audioTracks.length,
+        verified: userData.verified,
+      });
+
       return {
         accountUsername: username,
         accountDisplayName: userData.accountDisplayName || username,
         followers: userData.followers || 0,
-        likes: userData.likes || 0,
+        likes: finalLikes || 0,
         views: videoData.totalViews || 0,
         videoCount: userData.videoCount || 0,
         hashtags: videoData.hashtags,

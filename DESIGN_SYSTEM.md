@@ -160,3 +160,5 @@ The design system includes a dark theme (`trendydark`) with:
 - Adjusted gradients for better contrast
 - Maintained accessibility standards
 
+
+
